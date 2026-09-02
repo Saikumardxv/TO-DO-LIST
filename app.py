@@ -91,10 +91,13 @@ def _init_db_schema(conn):
         )
     ''')
     # Add reminder column if upgrading an existing DB
-    try:
-        conn.execute('ALTER TABLE tasks ADD COLUMN reminder INTEGER')
-    except Exception:
-        pass  # column already exists
+    if isinstance(conn, PostgresConnection):
+        conn.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder INTEGER')
+    else:
+        try:
+            conn.execute('ALTER TABLE tasks ADD COLUMN reminder INTEGER')
+        except Exception:
+            pass  # column already exists
     conn.commit()
 
 
