@@ -86,13 +86,15 @@ def _init_db_schema(conn):
             category   TEXT    DEFAULT 'General',
             due        TEXT,
             completed  INTEGER DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            reminder   INTEGER
+            created_at BIGINT NOT NULL,
+            reminder   BIGINT
         )
     ''')
     # Add reminder column if upgrading an existing DB
     if isinstance(conn, PostgresConnection):
         conn.execute('ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder INTEGER')
+        conn.execute('ALTER TABLE tasks ALTER COLUMN created_at TYPE BIGINT')
+        conn.execute('ALTER TABLE tasks ALTER COLUMN reminder TYPE BIGINT')
     else:
         try:
             conn.execute('ALTER TABLE tasks ADD COLUMN reminder INTEGER')
