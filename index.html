@@ -676,15 +676,20 @@
       due:       document.getElementById('task-due').value || null,
       completed: false, createdAt: Date.now()
     };
-    await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(task) });
-    await loadTasks();
-    document.getElementById('task-input').value = '';
-    document.getElementById('task-note').value  = '';
-    document.getElementById('task-due').value   = '';
-    document.getElementById('task-priority').value = 'medium';
-    document.getElementById('task-category').value = 'General';
-    document.getElementById('task-input').focus();
-    toast('Task "' + title + '" added!', 'success');
+    try {
+      const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(task) });
+      if (!res.ok) throw new Error('Server error');
+      await loadTasks();
+      document.getElementById('task-input').value = '';
+      document.getElementById('task-note').value  = '';
+      document.getElementById('task-due').value   = '';
+      document.getElementById('task-priority').value = 'medium';
+      document.getElementById('task-category').value = 'General';
+      document.getElementById('task-input').focus();
+      toast('Task "' + title + '" added!', 'success');
+    } catch(e) {
+      toast('Failed to save task. Please try again.', 'error');
+    }
   }
 
   async function toggleTask(id) {
@@ -832,7 +837,16 @@
     if (reminderMs <= Date.now()) { toast('Reminder time must be in the future!', 'error'); return; }
 
     // Request notification permission (user may take a few seconds)
-    if (Notification.permission === 'default') await Notification.requestPermission();
+    try {
+      if (typeof Notification === 'undefined') {
+        toast('Browser notifications are not supported here.', 'error');
+        return;
+      }
+      if (Notification.permission === 'default') await Notification.requestPermission();
+    } catch(e) {
+      toast('Browser notification permission could not be requested.', 'error');
+      return;
+    }
 
     // Re-validate after permission prompt delay
     if (reminderMs <= Date.now()) { toast('Reminder time has passed — please pick a later time.', 'error'); return; }

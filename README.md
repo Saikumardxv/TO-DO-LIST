@@ -2,6 +2,8 @@
 
 A full-stack To-Do List app with a beautiful black & white UI, Flask REST API backend, SQLite persistence, and browser reminder notifications.
 
+On Vercel, configure a persistent PostgreSQL connection in the `DATABASE_URL` environment variable. Vercel's `/tmp` filesystem is temporary, so the app rejects API writes there when this variable is missing instead of silently losing tasks.
+
 ## 🚀 Features
 
 - ➕ Add tasks with title, note, priority, category & due date
@@ -31,6 +33,8 @@ TO DO list/
 ```bash
 pip install flask flask-cors
 ```
+
+For Vercel, set `DATABASE_URL` to the connection string from your hosted PostgreSQL provider, then redeploy.
 
 ### 2. Start the server
 ```bash
@@ -64,5 +68,7 @@ python "To do list.py"
 
 - **Frontend:** HTML5, CSS3 (Vanilla), JavaScript (ES2020+)
 - **Backend:** Python, Flask, Flask-CORS
-- **Database:** SQLite (via Python `sqlite3`)
+- **Database:** SQLite locally; PostgreSQL on Vercel via `DATABASE_URL`
 - **Notifications:** Web Notifications API
+
+Reminders are delivered while the HTTPS app is open and browser notifications are permitted. Delivery after closing the site requires a Web Push service and is not provided by the browser timer alone.

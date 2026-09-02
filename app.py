@@ -23,6 +23,12 @@ app = Flask(__name__, static_folder=BASE_DIR)
 CORS(app)  # allow cross-origin requests during development
 
 
+@app.errorhandler(RuntimeError)
+def handle_runtime_error(error):
+    """Return configuration errors in the format expected by the frontend."""
+    return jsonify({'ok': False, 'error': str(error)}), 503
+
+
 # ── Database helpers ─────────────────────────────────────────────────────────
 def get_db():
     """Open a DB connection with row-as-dict support."""
@@ -33,6 +39,8 @@ def get_db():
         connection = PostgresConnection(database_url)
         init_db(connection)
         return connection
+    if os.environ.get('VERCEL'):
+        raise RuntimeError('DATABASE_URL must be configured on Vercel for persistent task storage')
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     init_db(conn)
