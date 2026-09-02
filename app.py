@@ -9,9 +9,15 @@ import sqlite3
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
+
 # ── App setup ────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH  = os.path.join(BASE_DIR, 'tasks.db')
+DB_PATH  = os.path.join('/tmp' if os.environ.get('VERCEL') else BASE_DIR, 'tasks.db')
 
 app = Flask(__name__, static_folder=BASE_DIR)
 CORS(app)  # allow cross-origin requests during development
@@ -20,33 +26,71 @@ CORS(app)  # allow cross-origin requests during development
 # ── Database helpers ─────────────────────────────────────────────────────────
 def get_db():
     """Open a DB connection with row-as-dict support."""
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        if psycopg2 is None:
+            raise RuntimeError('psycopg2 is required when DATABASE_URL is configured')
+        connection = PostgresConnection(database_url)
+        init_db(connection)
+        return connection
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    init_db(conn)
     return conn
 
 
-def init_db():
+class PostgresConnection:
+    def __init__(self, database_url):
+        self.connection = psycopg2.connect(database_url)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.connection.close()
+
+    def execute(self, query, parameters=()):
+        query = query.replace('?', '%s')
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(query, parameters)
+        return cursor
+
+    def commit(self):
+        self.connection.commit()
+
+
+def init_db(connection=None):
     """Create the tasks table if it doesn't already exist."""
-    with get_db() as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS tasks (
-                id         TEXT    PRIMARY KEY,
-                title      TEXT    NOT NULL,
-                note       TEXT    DEFAULT '',
-                priority   TEXT    DEFAULT 'medium',
-                category   TEXT    DEFAULT 'General',
-                due        TEXT,
-                completed  INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                reminder   INTEGER
-            )
-        ''')
-        # Add reminder column if upgrading an existing DB
-        try:
-            conn.execute('ALTER TABLE tasks ADD COLUMN reminder INTEGER')
-        except Exception:
-            pass  # column already exists
-        conn.commit()
+    if connection is None:
+        with sqlite3.connect(DB_PATH) as conn:
+            _init_db_schema(conn)
+        return
+    _init_db_schema(connection)
+
+
+def _init_db_schema(conn):
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            id         TEXT    PRIMARY KEY,
+            title      TEXT    NOT NULL,
+            note       TEXT    DEFAULT '',
+            priority   TEXT    DEFAULT 'medium',
+            category   TEXT    DEFAULT 'General',
+            due        TEXT,
+            completed  INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            reminder   INTEGER
+        )
+    ''')
+    # Add reminder column if upgrading an existing DB
+    try:
+        conn.execute('ALTER TABLE tasks ADD COLUMN reminder INTEGER')
+    except Exception:
+        pass  # column already exists
+    conn.commit()
+
+
+init_db()
 
 
 def row_to_dict(row):
