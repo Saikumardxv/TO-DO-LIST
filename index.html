@@ -657,12 +657,32 @@
 
 <script>
   const API = '/api/tasks';
+  const STATIC_HOST = location.hostname.endsWith('github.io') || location.protocol === 'file:';
+  let localMode = STATIC_HOST || localStorage.getItem('taskflow_use_local') === 'true';
+  let localAttachments = STATIC_HOST || localStorage.getItem('taskflow_local_attachments') === 'true';
   let tasks = [];
   let filter = 'all', catFilter = 'all', search = '', sortMode = 'newest', editId = null;
 
   const uid = () => Math.random().toString(36).slice(2,10) + Date.now();
 
+  function saveLocalTasks() {
+    localStorage.setItem('taskflow_tasks', JSON.stringify(tasks));
+  }
+
+  function switchToLocalTasks() {
+    localMode = true;
+    localStorage.setItem('taskflow_use_local', 'true');
+    saveLocalTasks();
+  }
+
   async function loadTasks() {
+    if (localMode) {
+      try { tasks = JSON.parse(localStorage.getItem('taskflow_tasks') || '[]'); }
+      catch(e) { tasks = []; }
+      render();
+      scheduleReminders();
+      return;
+    }
     try {
       const res = await fetch(API);
       if (!res.ok) throw new Error('Server error');
@@ -670,7 +690,12 @@
       render();
       scheduleReminders();
     } catch(e) {
-      toast('⚠️ Could not connect to backend server!', 'error');
+      try { tasks = JSON.parse(localStorage.getItem('taskflow_tasks') || '[]'); }
+      catch(error) { tasks = []; }
+      switchToLocalTasks();
+      render();
+      scheduleReminders();
+      toast('Using browser storage because the task server is unavailable.', 'info');
     }
   }
 
@@ -806,9 +831,15 @@
       completed: false, createdAt: Date.now()
     };
     try {
-      const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(task) });
-      if (!res.ok) throw new Error('Server error');
-      await loadTasks();
+      if (localMode) {
+        tasks.push(task);
+        saveLocalTasks();
+        render();
+      } else {
+        const res = await fetch(API, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(task) });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      }
       document.getElementById('task-input').value = '';
       document.getElementById('task-note').value  = '';
       document.getElementById('task-due').value   = '';
@@ -817,7 +848,14 @@
       document.getElementById('task-input').focus();
       toast('Task "' + title + '" added!', 'success');
     } catch(e) {
-      toast('Failed to save task. Please try again.', 'error');
+      switchToLocalTasks();
+      tasks.push(task);
+      saveLocalTasks();
+      render();
+      document.getElementById('task-input').value = '';
+      document.getElementById('task-note').value = '';
+      document.getElementById('task-due').value = '';
+      toast('Server save failed; task saved in this browser.', 'info');
     }
   }
 
@@ -825,32 +863,88 @@
     const t = tasks.find(x => x.id === id);
     if (!t) return;
     const updated = {...t, completed: !t.completed};
-    await fetch(API + '/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
-    await loadTasks();
+    if (localMode) {
+      tasks = tasks.map(task => task.id === id ? updated : task);
+      saveLocalTasks();
+      render();
+    } else {
+      try {
+        const res = await fetch(API + '/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      } catch(e) {
+        switchToLocalTasks();
+        tasks = tasks.map(task => task.id === id ? updated : task);
+        saveLocalTasks();
+        render();
+      }
+    }
     toast(updated.completed ? '✅ Marked complete!' : '↩️ Marked active', updated.completed ? 'success' : 'info');
   }
 
   async function deleteTask(id) {
     const t = tasks.find(x => x.id === id);
     if (!t) return;
-    await fetch(API + '/' + id, { method: 'DELETE' });
-    await loadTasks();
+    if (localMode) {
+      tasks = tasks.filter(task => task.id !== id);
+      saveLocalTasks();
+      render();
+    } else {
+      try {
+        const res = await fetch(API + '/' + id, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      } catch(e) {
+        switchToLocalTasks();
+        tasks = tasks.filter(task => task.id !== id);
+        saveLocalTasks();
+        render();
+      }
+    }
     toast('"' + t.title + '" deleted.', 'info');
   }
 
   async function clearDone() {
     const count = tasks.filter(t => t.completed).length;
     if (!count) { toast('No completed tasks to clear.', 'info'); return; }
-    await fetch(API + '/completed', { method: 'DELETE' });
-    await loadTasks();
+    if (localMode) {
+      tasks = tasks.filter(task => !task.completed);
+      saveLocalTasks();
+      render();
+    } else {
+      try {
+        const res = await fetch(API + '/completed', { method: 'DELETE' });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      } catch(e) {
+        switchToLocalTasks();
+        tasks = tasks.filter(task => !task.completed);
+        saveLocalTasks();
+        render();
+      }
+    }
     toast(count + ' completed task' + (count > 1 ? 's' : '') + ' cleared.', 'success');
   }
 
   async function completeAll() {
     const active = tasks.filter(t => !t.completed);
     if (!active.length) { toast('All tasks are already done!', 'info'); return; }
-    await fetch(API + '/complete-all', { method: 'PUT' });
-    await loadTasks();
+    if (localMode) {
+      tasks = tasks.map(task => ({...task, completed: true}));
+      saveLocalTasks();
+      render();
+    } else {
+      try {
+        const res = await fetch(API + '/complete-all', { method: 'PUT' });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      } catch(e) {
+        switchToLocalTasks();
+        tasks = tasks.map(task => ({...task, completed: true}));
+        saveLocalTasks();
+        render();
+      }
+    }
     toast(active.length + ' task' + (active.length > 1 ? 's' : '') + ' marked complete! 🎉', 'success');
   }
 
@@ -885,8 +979,22 @@
       category: document.getElementById('edit-category').value,
       due:      document.getElementById('edit-due').value || null,
     };
-    await fetch(API + '/' + editId, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
-    await loadTasks();
+    if (localMode) {
+      tasks = tasks.map(task => task.id === editId ? updated : task);
+      saveLocalTasks();
+      render();
+    } else {
+      try {
+        const res = await fetch(API + '/' + editId, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(updated) });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      } catch(e) {
+        switchToLocalTasks();
+        tasks = tasks.map(task => task.id === editId ? updated : task);
+        saveLocalTasks();
+        render();
+      }
+    }
     closeEdit();
     toast('Task updated!', 'success');
   }
@@ -982,19 +1090,32 @@
 
     try {
       const updated = {...t, reminder: reminderMs};
-      const res = await fetch(API + '/' + savedId, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(updated)
-      });
-      if (!res.ok) throw new Error('Server error');
+      if (localMode) {
+        tasks = tasks.map(task => task.id === savedId ? updated : task);
+        saveLocalTasks();
+        render();
+      } else {
+        const res = await fetch(API + '/' + savedId, {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(updated)
+        });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      }
       // Close modal first, then refresh
       document.getElementById('reminder-modal').classList.remove('open');
       reminderId = null;
-      await loadTasks();
       toast('🔔 Reminder set for ' + new Date(reminderMs).toLocaleString() + '!', 'success');
     } catch(e) {
-      toast('Failed to save reminder. Is the server running?', 'error');
+      const updated = {...t, reminder: reminderMs};
+      switchToLocalTasks();
+      tasks = tasks.map(task => task.id === savedId ? updated : task);
+      saveLocalTasks();
+      render();
+      document.getElementById('reminder-modal').classList.remove('open');
+      reminderId = null;
+      toast('Reminder saved in this browser.', 'info');
     }
   }
 
@@ -1004,18 +1125,31 @@
     if (!t) return;
     try {
       const updated = {...t, reminder: null};
-      const res = await fetch(API + '/' + savedId, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(updated)
-      });
-      if (!res.ok) throw new Error('Server error');
+      if (localMode) {
+        tasks = tasks.map(task => task.id === savedId ? updated : task);
+        saveLocalTasks();
+        render();
+      } else {
+        const res = await fetch(API + '/' + savedId, {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(updated)
+        });
+        if (!res.ok) throw new Error('Server error');
+        await loadTasks();
+      }
       document.getElementById('reminder-modal').classList.remove('open');
       reminderId = null;
-      await loadTasks();
       toast('Reminder cleared.', 'info');
     } catch(e) {
-      toast('Failed to clear reminder.', 'error');
+      const updated = {...t, reminder: null};
+      switchToLocalTasks();
+      tasks = tasks.map(task => task.id === savedId ? updated : task);
+      saveLocalTasks();
+      render();
+      document.getElementById('reminder-modal').classList.remove('open');
+      reminderId = null;
+      toast('Reminder cleared in this browser.', 'info');
     }
   }
 
@@ -1058,6 +1192,43 @@
   let attTaskId   = null;   // currently open task id
   let attTaskName = '';     // title of that task
   let attList     = [];     // loaded attachments for the open task
+  const attachmentDb = new Promise((resolve, reject) => {
+    const request = indexedDB.open('taskflow_attachments', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('files', {keyPath: 'id'});
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  function requestResult(request) {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async function getLocalAttachments(taskId, createUrls = true) {
+    const db = await attachmentDb;
+    const all = await requestResult(db.transaction('files').objectStore('files').getAll());
+    return all.filter(file => file.task_id === taskId).map(file => ({
+      ...file,
+      url: createUrls ? URL.createObjectURL(file.blob) : null
+    }));
+  }
+
+  async function saveLocalAttachment(taskId, file) {
+    const db = await attachmentDb;
+    const attachment = {
+      id: uid(), task_id: taskId, original_name: file.name,
+      mime_type: file.type || 'application/octet-stream', file_size: file.size,
+      created_at: Date.now(), blob: file
+    };
+    await requestResult(db.transaction('files', 'readwrite').objectStore('files').put(attachment));
+  }
+
+  async function removeLocalAttachment(id) {
+    const db = await attachmentDb;
+    await requestResult(db.transaction('files', 'readwrite').objectStore('files').delete(id));
+  }
 
   // ── Mime → emoji icon
   function mimeIcon(mime, name) {
@@ -1084,9 +1255,14 @@
   async function loadAllAttachmentCounts(ids) {
     for (const id of ids) {
       try {
-        const res = await fetch('/api/tasks/' + id + '/attachments');
-        if (!res.ok) continue;
-        const atts = await res.json();
+        let atts;
+        if (localAttachments) {
+          atts = await getLocalAttachments(id, false);
+        } else {
+          const res = await fetch('/api/tasks/' + id + '/attachments');
+          if (!res.ok) throw new Error('Attachment server unavailable');
+          atts = await res.json();
+        }
         const badge = document.getElementById('attcnt-' + id);
         if (badge) {
           if (atts.length > 0) {
@@ -1096,7 +1272,17 @@
             badge.style.display = 'none';
           }
         }
-      } catch(e) { /* ignore */ }
+      } catch(e) {
+        localAttachments = true;
+        try {
+          const atts = await getLocalAttachments(id, false);
+          const badge = document.getElementById('attcnt-' + id);
+          if (badge && atts.length) {
+            badge.textContent = atts.length;
+            badge.style.display = 'flex';
+          }
+        } catch(error) { /* IndexedDB may be unavailable in restricted browser contexts. */ }
+      }
     }
   }
 
@@ -1121,9 +1307,19 @@
   async function refreshAttList() {
     if (!attTaskId) return;
     try {
-      const res = await fetch('/api/tasks/' + attTaskId + '/attachments');
-      attList = res.ok ? await res.json() : [];
-    } catch(e) { attList = []; }
+      if (localAttachments) {
+        attList = await getLocalAttachments(attTaskId);
+      } else {
+        const res = await fetch('/api/tasks/' + attTaskId + '/attachments');
+        if (!res.ok) throw new Error('Attachment server unavailable');
+        attList = await res.json();
+      }
+    } catch(e) {
+      localAttachments = true;
+      localStorage.setItem('taskflow_local_attachments', 'true');
+      try { attList = await getLocalAttachments(attTaskId); }
+      catch(error) { attList = []; toast('Browser file storage is unavailable.', 'error'); }
+    }
     renderAttList();
     // Update badge on parent task card
     const badge = document.getElementById('attcnt-' + attTaskId);
@@ -1145,8 +1341,9 @@
     }
     el.innerHTML = attList.map(a => {
       const icon = mimeIcon(a.mime_type, a.original_name);
+      const fileUrl = localAttachments ? a.url : '/api/attachments/' + a.id + '/file';
       const previewHtml = (a.mime_type && a.mime_type.startsWith('image/'))
-        ? '<div class="att-preview-wrap"><img src="/api/attachments/' + a.id + '/file" alt="' + escHtml(a.original_name) + '" loading="lazy"/></div>'
+        ? '<div class="att-preview-wrap"><img src="' + fileUrl + '" alt="' + escHtml(a.original_name) + '" loading="lazy"/></div>'
         : '';
       return '<div class="att-item" id="att-item-' + a.id + '">' +
         (previewHtml
@@ -1159,7 +1356,7 @@
             '<div class="att-meta">' + fmtSize(a.file_size) + ' · ' + new Date(a.created_at).toLocaleDateString() + '</div></div>'
         ) +
         '<div class="att-actions">' +
-          '<a class="btn btn-view btn-sm" href="/api/attachments/' + a.id + '/file" target="_blank" rel="noopener" title="Open / View">👁️ View</a>' +
+          '<a class="btn btn-view btn-sm" href="' + fileUrl + '" target="_blank" rel="noopener" title="Open / View">👁️ View</a>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteAttachment(\'' + a.id + '\')" title="Delete">🗑️</button>' +
         '</div>' +
       '</div>';
@@ -1182,12 +1379,28 @@
       const fd = new FormData();
       fd.append('file', file);
       try {
-        const res = await fetch('/api/tasks/' + attTaskId + '/attachments', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!res.ok) { toast('Upload failed: ' + (data.error || 'Unknown error'), 'error'); continue; }
+        if (localAttachments) {
+          await saveLocalAttachment(attTaskId, file);
+        } else {
+          const res = await fetch('/api/tasks/' + attTaskId + '/attachments', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Upload failed');
+        }
         uploaded++;
       } catch(e) {
-        toast('Upload error for "' + file.name + '"', 'error');
+        if (!localAttachments) {
+          try {
+            localAttachments = true;
+            localStorage.setItem('taskflow_local_attachments', 'true');
+            await saveLocalAttachment(attTaskId, file);
+            uploaded++;
+            toast('File saved in this browser because server upload failed.', 'info');
+          } catch(error) {
+            toast('Upload failed for "' + file.name + '": ' + error.message, 'error');
+          }
+        } else {
+          toast('Upload failed for "' + file.name + '": ' + e.message, 'error');
+        }
       }
       progressBar.style.width = Math.round(((Array.from(files).indexOf(file)+1) / files.length) * 100) + '%';
     }
@@ -1201,10 +1414,23 @@
     const att = attList.find(a => a.id === attId);
     if (!att) return;
     try {
-      await fetch('/api/attachments/' + attId, { method: 'DELETE' });
+      if (localAttachments) {
+        await removeLocalAttachment(attId);
+      } else {
+        const res = await fetch('/api/attachments/' + attId, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+      }
       toast('"' + att.original_name + '" deleted.', 'info');
       await refreshAttList();
-    } catch(e) { toast('Failed to delete file.', 'error'); }
+    } catch(e) {
+      try {
+        localAttachments = true;
+        localStorage.setItem('taskflow_local_attachments', 'true');
+        await removeLocalAttachment(attId);
+        await refreshAttList();
+        toast('File deleted from this browser.', 'info');
+      } catch(error) { toast('Failed to delete file.', 'error'); }
+    }
   }
 
   // ── Wire up drop zone & file input
