@@ -17,3 +17,7 @@ tasks.db
 Thumbs.db
 .vercel
 .env*
+
+# Uploaded files (keep folder, not contents)
+uploads/*
+!uploads/.gitkeep

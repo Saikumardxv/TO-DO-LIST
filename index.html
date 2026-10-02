@@ -327,6 +327,99 @@
       .glass { padding: 16px; }
       .task-actions { gap: 4px; }
     }
+
+    /* ── ATTACHMENT BUTTON on task card ──────────────────────────────── */
+    .btn-attach {
+      position: relative;
+      background: rgba(167,139,250,0.12);
+      color: #a78bfa;
+      border: 1px solid rgba(167,139,250,0.28);
+      font-size: 1rem;
+      line-height: 1;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+    }
+    .btn-attach:hover {
+      background: rgba(167,139,250,0.25);
+      box-shadow: 0 0 12px rgba(167,139,250,0.4);
+      transform: scale(1.1);
+    }
+    .attach-count {
+      position: absolute; top: -5px; right: -5px;
+      background: #a78bfa; color: #000;
+      font-size: 0.6rem; font-weight: 800;
+      border-radius: 50%; width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none; line-height: 1;
+    }
+
+    /* ── ATTACHMENT VIEWER MODAL ──────────────────────────────────────── */
+    .att-modal { max-width: 640px; max-height: 90vh; overflow-y: auto; }
+    .att-drop-zone {
+      border: 2px dashed rgba(167,139,250,0.4);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-bottom: 18px;
+      background: rgba(167,139,250,0.05);
+    }
+    .att-drop-zone:hover, .att-drop-zone.drag-over {
+      border-color: #a78bfa;
+      background: rgba(167,139,250,0.12);
+    }
+    .att-drop-icon { font-size: 2.2rem; margin-bottom: 6px; }
+    .att-drop-text { font-size: 0.82rem; color: var(--muted); }
+    .att-drop-text strong { color: #a78bfa; }
+    .att-list { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+    .att-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 14px;
+      transition: transform var(--transition), box-shadow var(--transition);
+      animation: slideIn 0.25s ease;
+    }
+    .att-item:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
+    .att-icon { font-size: 1.5rem; flex-shrink: 0; }
+    .att-info { flex: 1; min-width: 0; }
+    .att-name {
+      font-size: 0.88rem; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      color: var(--text);
+    }
+    .att-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .att-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-view {
+      background: rgba(56,189,248,0.12); color: var(--blue);
+      border: 1px solid rgba(56,189,248,0.28);
+    }
+    .btn-view:hover { background: rgba(56,189,248,0.22); }
+    .att-empty {
+      text-align: center; padding: 24px 0; color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .att-empty-icon { font-size: 2rem; margin-bottom: 6px; }
+    .upload-progress {
+      display: none; margin-bottom: 12px;
+      background: var(--surface2); border-radius: 8px; overflow: hidden; height: 6px;
+    }
+    .upload-progress-bar {
+      height: 100%; width: 0;
+      background: linear-gradient(90deg,#a78bfa,#7c3aed);
+      border-radius: 8px;
+      transition: width 0.3s ease;
+    }
+
+    /* image preview inside modal */
+    .att-preview-wrap {
+      text-align: center; margin-bottom: 14px;
+      border-radius: 10px; overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .att-preview-wrap img {
+      max-width: 100%; max-height: 300px;
+      object-fit: contain; display: block; margin: 0 auto;
+    }
   </style>
 </head>
 <body>
@@ -398,6 +491,36 @@
       <button class="btn btn-ghost" id="clear-reminder-btn">🔕 Clear</button>
       <button class="btn btn-ghost" id="cancel-reminder-btn">Cancel</button>
       <button class="btn btn-primary" id="save-reminder-btn">🔔 Set Reminder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Attachment Viewer Modal -->
+<div class="modal-overlay" id="att-modal" role="dialog" aria-modal="true" aria-labelledby="att-modal-title">
+  <div class="modal att-modal">
+    <div class="modal-title" id="att-modal-title">📎 Task Attachments</div>
+    <p id="att-modal-task-name" style="font-size:0.82rem;color:var(--muted);margin-bottom:14px;word-break:break-word"></p>
+
+    <!-- Drop zone / click to upload -->
+    <div class="att-drop-zone" id="att-drop-zone" tabindex="0" role="button" aria-label="Upload files">
+      <div class="att-drop-icon">📁</div>
+      <div class="att-drop-text">
+        <strong>Click to choose</strong> or drag &amp; drop files here<br>
+        <span>Images, PDFs, Docs, Videos, ZIP — up to 20 MB each</span>
+      </div>
+    </div>
+    <input type="file" id="att-file-input" multiple style="display:none" />
+
+    <!-- Upload progress bar -->
+    <div class="upload-progress" id="att-progress">
+      <div class="upload-progress-bar" id="att-progress-bar"></div>
+    </div>
+
+    <!-- File list -->
+    <div class="att-list" id="att-list"></div>
+
+    <div class="modal-actions" style="margin-top:18px">
+      <button class="btn btn-ghost" id="att-modal-close">Close</button>
     </div>
   </div>
 </div>
@@ -653,6 +776,10 @@
           '</div>' +
         '</div>' +
         '<div class="task-actions">' +
+          '<button class="btn btn-attach btn-sm" onclick="openAttachments(\'' + t.id + '\',event)" title="Attachments / Files" id="att-btn-' + t.id + '">' +
+            '📎' +
+            '<span class="attach-count" id="attcnt-' + t.id + '" style="display:none">0</span>' +
+          '</button>' +
           '<button class="btn btn-ghost btn-sm btn-reminder ' + (t.reminder ? 'has-reminder' : '') + '" onclick="openReminder(\'' + t.id + '\')" title="' + (t.reminder ? 'Reminder set: ' + new Date(t.reminder).toLocaleString() : 'Set reminder') + '">🔔</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="openEdit(\'' + t.id + '\')" title="Edit">✏️</button>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteTask(\'' + t.id + '\')" title="Delete">🗑️</button>' +
@@ -663,6 +790,8 @@
     list.querySelectorAll('.task-check').forEach(el => {
       el.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); }});
     });
+    // Load attachment counts for all visible tasks
+    loadAllAttachmentCounts(visible.map(t => t.id));
   }
 
   async function addTask() {
@@ -924,6 +1053,179 @@
   applyTheme(localStorage.getItem('taskflow_theme') === 'light');
 
   loadTasks();
+
+  // ══ TASK ATTACHMENT LOGIC ══════════════════════════════════════════════════
+  let attTaskId   = null;   // currently open task id
+  let attTaskName = '';     // title of that task
+  let attList     = [];     // loaded attachments for the open task
+
+  // ── Mime → emoji icon
+  function mimeIcon(mime, name) {
+    if (!mime) mime = '';
+    if (mime.startsWith('image/'))  return '🖼️';
+    if (mime === 'application/pdf') return '📕';
+    if (mime.includes('word'))      return '📝';
+    if (mime.includes('excel') || mime.includes('spreadsheet')) return '📊';
+    if (mime.includes('powerpoint') || mime.includes('presentation')) return '📊';
+    if (mime.startsWith('video/'))  return '🎬';
+    if (mime.startsWith('audio/'))  return '🎵';
+    if (mime.includes('zip') || mime.includes('rar') || mime.includes('7z')) return '📦';
+    if (mime.startsWith('text/'))   return '📄';
+    return '📎';
+  }
+
+  function fmtSize(bytes) {
+    if (bytes < 1024)       return bytes + ' B';
+    if (bytes < 1048576)    return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  }
+
+  // ── Load attachment counts for a list of task IDs and show badge
+  async function loadAllAttachmentCounts(ids) {
+    for (const id of ids) {
+      try {
+        const res = await fetch('/api/tasks/' + id + '/attachments');
+        if (!res.ok) continue;
+        const atts = await res.json();
+        const badge = document.getElementById('attcnt-' + id);
+        if (badge) {
+          if (atts.length > 0) {
+            badge.textContent = atts.length;
+            badge.style.display = 'flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        }
+      } catch(e) { /* ignore */ }
+    }
+  }
+
+  // ── Open Attachment modal for a task
+  async function openAttachments(taskId, evt) {
+    evt && evt.stopPropagation();
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) return;
+    attTaskId   = taskId;
+    attTaskName = t.title;
+    document.getElementById('att-modal-task-name').textContent = '📌 ' + t.title;
+    document.getElementById('att-modal').classList.add('open');
+    await refreshAttList();
+  }
+
+  function closeAttModal() {
+    document.getElementById('att-modal').classList.remove('open');
+    attTaskId = null;
+  }
+
+  // ── Fetch & render attachment list
+  async function refreshAttList() {
+    if (!attTaskId) return;
+    try {
+      const res = await fetch('/api/tasks/' + attTaskId + '/attachments');
+      attList = res.ok ? await res.json() : [];
+    } catch(e) { attList = []; }
+    renderAttList();
+    // Update badge on parent task card
+    const badge = document.getElementById('attcnt-' + attTaskId);
+    if (badge) {
+      if (attList.length > 0) {
+        badge.textContent = attList.length;
+        badge.style.display = 'flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  }
+
+  function renderAttList() {
+    const el = document.getElementById('att-list');
+    if (!attList.length) {
+      el.innerHTML = '<div class="att-empty"><div class="att-empty-icon">📂</div><p>No files attached yet.<br>Upload a notice, document, or photo above.</p></div>';
+      return;
+    }
+    el.innerHTML = attList.map(a => {
+      const icon = mimeIcon(a.mime_type, a.original_name);
+      const previewHtml = (a.mime_type && a.mime_type.startsWith('image/'))
+        ? '<div class="att-preview-wrap"><img src="/api/attachments/' + a.id + '/file" alt="' + escHtml(a.original_name) + '" loading="lazy"/></div>'
+        : '';
+      return '<div class="att-item" id="att-item-' + a.id + '">' +
+        (previewHtml
+          ? '<div style="flex:1;min-width:0">' + previewHtml +
+              '<div class="att-info"><div class="att-name" title="' + escHtml(a.original_name) + '">' + escHtml(a.original_name) + '</div>' +
+              '<div class="att-meta">' + fmtSize(a.file_size) + ' · ' + new Date(a.created_at).toLocaleDateString() + '</div></div>' +
+            '</div>'
+          : '<div class="att-icon">' + icon + '</div>' +
+            '<div class="att-info"><div class="att-name" title="' + escHtml(a.original_name) + '">' + escHtml(a.original_name) + '</div>' +
+            '<div class="att-meta">' + fmtSize(a.file_size) + ' · ' + new Date(a.created_at).toLocaleDateString() + '</div></div>'
+        ) +
+        '<div class="att-actions">' +
+          '<a class="btn btn-view btn-sm" href="/api/attachments/' + a.id + '/file" target="_blank" rel="noopener" title="Open / View">👁️ View</a>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteAttachment(\'' + a.id + '\')" title="Delete">🗑️</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // ── Upload one or more files
+  async function uploadFiles(files) {
+    if (!files || !files.length) return;
+    const progressWrap = document.getElementById('att-progress');
+    const progressBar  = document.getElementById('att-progress-bar');
+    progressWrap.style.display = 'block';
+    progressBar.style.width    = '0%';
+
+    let uploaded = 0;
+    for (const file of files) {
+      if (file.size > 20 * 1024 * 1024) {
+        toast('"' + file.name + '" exceeds 20 MB limit.', 'error'); continue;
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('/api/tasks/' + attTaskId + '/attachments', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) { toast('Upload failed: ' + (data.error || 'Unknown error'), 'error'); continue; }
+        uploaded++;
+      } catch(e) {
+        toast('Upload error for "' + file.name + '"', 'error');
+      }
+      progressBar.style.width = Math.round(((Array.from(files).indexOf(file)+1) / files.length) * 100) + '%';
+    }
+    setTimeout(() => { progressWrap.style.display = 'none'; progressBar.style.width = '0%'; }, 600);
+    if (uploaded) toast('✅ ' + uploaded + ' file' + (uploaded > 1 ? 's' : '') + ' uploaded!', 'success');
+    await refreshAttList();
+  }
+
+  // ── Delete attachment
+  async function deleteAttachment(attId) {
+    const att = attList.find(a => a.id === attId);
+    if (!att) return;
+    try {
+      await fetch('/api/attachments/' + attId, { method: 'DELETE' });
+      toast('"' + att.original_name + '" deleted.', 'info');
+      await refreshAttList();
+    } catch(e) { toast('Failed to delete file.', 'error'); }
+  }
+
+  // ── Wire up drop zone & file input
+  const attDropZone  = document.getElementById('att-drop-zone');
+  const attFileInput = document.getElementById('att-file-input');
+
+  attDropZone.addEventListener('click', () => attFileInput.click());
+  attDropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') attFileInput.click(); });
+  attFileInput.addEventListener('change', e => uploadFiles(e.target.files));
+
+  attDropZone.addEventListener('dragover', e => { e.preventDefault(); attDropZone.classList.add('drag-over'); });
+  attDropZone.addEventListener('dragleave', () => attDropZone.classList.remove('drag-over'));
+  attDropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    attDropZone.classList.remove('drag-over');
+    uploadFiles(e.dataTransfer.files);
+  });
+
+  document.getElementById('att-modal-close').addEventListener('click', closeAttModal);
+  document.getElementById('att-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeAttModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAttModal(); }, true);
 </script>
 </body>
 </html>
