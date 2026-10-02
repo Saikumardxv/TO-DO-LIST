@@ -2,7 +2,7 @@
 
 A full-stack To-Do List app with a beautiful black & white UI, Flask REST API backend, SQLite persistence, and browser reminder notifications.
 
-GitHub Pages and deployments whose API is unavailable automatically use browser storage for tasks and attachments. This keeps the app usable but data is local to that browser and does not sync across devices. Configure PostgreSQL on Vercel for shared, server-backed tasks; attachments fall back to browser storage when server uploads are unavailable.
+GitHub Pages and deployments whose API is unavailable automatically use browser storage for tasks and attachments. This keeps the app usable but data is local to that browser and does not sync across devices. Configure PostgreSQL on Vercel for shared, server-backed tasks and attachments; uploaded file data is stored in the database rather than Vercel's temporary filesystem. The browser fallback remains available if an API request fails.
 
 On Vercel, configure a persistent PostgreSQL connection in the `DATABASE_URL` environment variable. Vercel's `/tmp` filesystem is temporary, so the app rejects API writes there when this variable is missing instead of silently losing tasks.
 

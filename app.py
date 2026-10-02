@@ -7,7 +7,8 @@ Run: python app.py  →  open http://127.0.0.1:5000
 import os
 import uuid
 import sqlite3
-from flask import Flask, request, jsonify, send_from_directory, abort
+from io import BytesIO
+from flask import Flask, request, jsonify, send_file, send_from_directory, abort
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -134,6 +135,14 @@ def _init_db_schema(conn):
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
         )
     ''')
+    if isinstance(conn, PostgresConnection):
+        conn.execute('ALTER TABLE task_attachments ADD COLUMN IF NOT EXISTS content BYTEA')
+    else:
+        try:
+            conn.execute('ALTER TABLE task_attachments ADD COLUMN content BLOB')
+        except sqlite3.OperationalError as error:
+            if 'duplicate column name' not in str(error).lower():
+                raise
     conn.commit()
 
 
@@ -265,7 +274,8 @@ def get_attachments(task_id):
     """Return all attachments for a task."""
     with get_db() as conn:
         rows = conn.execute(
-            'SELECT * FROM task_attachments WHERE task_id = ? ORDER BY created_at ASC',
+            '''SELECT id, task_id, filename, original_name, mime_type, file_size, created_at
+               FROM task_attachments WHERE task_id = ? ORDER BY created_at ASC''',
             (task_id,)
         ).fetchall()
     return jsonify([dict(r) for r in rows])
@@ -285,12 +295,10 @@ def upload_attachment(task_id):
     original_name = secure_filename(f.filename)
     ext           = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else ''
     stored_name   = str(uuid.uuid4()) + ('.' + ext if ext else '')
-    save_path     = os.path.join(UPLOAD_DIR, stored_name)
-    f.save(save_path)
-    file_size = os.path.getsize(save_path)
+    content       = f.read()
+    file_size     = len(content)
 
     if file_size > MAX_UPLOAD_MB * 1024 * 1024:
-        os.remove(save_path)
         return jsonify({'ok': False, 'error': f'File exceeds {MAX_UPLOAD_MB} MB limit'}), 413
 
     import time
@@ -300,9 +308,9 @@ def upload_attachment(task_id):
     with get_db() as conn:
         conn.execute(
             '''INSERT INTO task_attachments
-               (id, task_id, filename, original_name, mime_type, file_size, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)''',
-            (att_id, task_id, stored_name, original_name, mime, file_size, int(time.time() * 1000))
+               (id, task_id, filename, original_name, mime_type, file_size, created_at, content)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (att_id, task_id, stored_name, original_name, mime, file_size, int(time.time() * 1000), content)
         )
         conn.commit()
 
@@ -326,6 +334,14 @@ def serve_attachment(att_id):
     if not row:
         abort(404)
     row = dict(row)
+    if row.get('content') is not None:
+        return send_file(
+            BytesIO(bytes(row['content'])),
+            mimetype=row['mime_type'],
+            as_attachment=False,
+            download_name=row['original_name']
+        )
+    # Keep attachments uploaded before the database-content migration available.
     return send_from_directory(
         UPLOAD_DIR, row['filename'],
         as_attachment=False,
